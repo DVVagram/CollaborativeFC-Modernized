@@ -35,7 +35,7 @@ logging.getLogger('autobahn').setLevel(logging.ERROR)
 # setup the qt based event loop for asyncio
 # *******************************************************
 import asyncio
-from PySide2 import QtCore
+from PySide import QtCore
 __app = QtCore.QCoreApplication.instance()
 __loop = Qasync.QEventLoop(__app, already_running=True)
 asyncio.set_event_loop(__loop)

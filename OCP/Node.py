@@ -23,7 +23,7 @@ import aiofiles
 from aiofiles import os as aioos
 import Utils
 from Qasync import asyncSlot
-from PySide2 import QtCore
+from PySide import QtCore
 
 class LogReader(QtCore.QAbstractListModel):
     # Reads log updates from rotating log file and makes it accessible as Qt List Model

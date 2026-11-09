@@ -83,11 +83,11 @@ class _Selector(selectors.BaseSelector):
         self._fd_to_key[key.fd] = key
 
         if events & EVENT_READ:
-            notifier = QtCore.QSocketNotifier(key.fd, QtCore.QSocketNotifier.Read)
+            notifier = QtCore.QSocketNotifier(key.fd, QtCore.QSocketNotifier.Type.Read)
             notifier.activated['int'].connect(self.__on_read_activated)
             self.__read_notifiers[key.fd] = notifier
         if events & EVENT_WRITE:
-            notifier = QtCore.QSocketNotifier(key.fd, QtCore.QSocketNotifier.Write)
+            notifier = QtCore.QSocketNotifier(key.fd, QtCore.QSocketNotifier.Type.Write)
             notifier.activated['int'].connect(self.__on_write_activated)
             self.__write_notifiers[key.fd] = notifier
 

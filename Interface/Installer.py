@@ -17,8 +17,8 @@
 # *   Suite 330, Boston, MA  02111-1307, USA                             *
 # ************************************************************************
 
-import FreeCADGui, asyncio, os, sys, importlib, platform
-from PySide2 import QtCore, QtGui, QtWidgets
+import FreeCAD, FreeCADGui, asyncio, os, sys, importlib, platform
+from PySide import QtCore, QtGui, QtWidgets
 from Utils import AsyncSlotObject, AsyncSlot
 
 class _PipInstaller(QtCore.QObject, AsyncSlotObject):
@@ -55,6 +55,12 @@ class _PipInstaller(QtCore.QObject, AsyncSlotObject):
             
         else:
             pyCmd = "python"
+            if platform.system() == "Windows":
+                # FreeCAD ships its own interpreter next to the executable. Use it, otherwise
+                # the requirements end up in an unrelated Python installation
+                fcPy = os.path.join(os.path.dirname(sys.executable), "python.exe")
+                if os.path.isfile(fcPy):
+                    pyCmd = f'"{fcPy}"'
             if platform.system() == "Linux":
                 # in linux it can happen that FreeCAD uses python3, while the system python executable is python 2. Then the installation would 
                 # install the requirements for the wrong python version. Check for this case
@@ -72,7 +78,12 @@ class _PipInstaller(QtCore.QObject, AsyncSlotObject):
                     pyCmd += str(fcPy)
 
             
-            cmd = f"{pyCmd} -m pip install -r {self.__requirements}"
+            # FreeCAD >= 1.0 adds AdditionalPythonPackages/pyXY to sys.path. Install there so
+            # the requirements are importable by this FreeCAD instance without admin rights
+            target = os.path.join(FreeCAD.getUserAppDataDir(), "AdditionalPythonPackages",
+                                  f"py{sys.version_info[0]}{sys.version_info[1]}")
+            os.makedirs(target, exist_ok=True)
+            cmd = f"{pyCmd} -m pip install --target \"{target}\" -r {self.__requirements}"
             cwd = os.path.dirname(sys.executable)
             self.__process = await asyncio.create_subprocess_shell(cmd, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             

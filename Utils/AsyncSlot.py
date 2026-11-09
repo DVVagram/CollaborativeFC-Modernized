@@ -19,7 +19,7 @@
 
 from Utils.Errorhandling import isOCPError
 import asyncio, functools, traceback
-from PySide2 import QtCore
+from PySide import QtCore
 
 class AsyncSlotObject():
     # base class to add async functionality to QtObject derived classes (required for UI handling)

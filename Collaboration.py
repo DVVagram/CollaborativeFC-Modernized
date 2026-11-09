@@ -62,7 +62,8 @@ if not importfail:
         message += ''.join(traceback.format_stack(frame))
         i.interact(message)
 
-    signal.signal(signal.SIGUSR1, debug)  # Register handler
+    if hasattr(signal, "SIGUSR1"):  # SIGUSR1 does not exist on Windows
+        signal.signal(signal.SIGUSR1, debug)  # Register handler
 
     # txaio workaround
     # ******************************************

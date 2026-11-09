@@ -3,7 +3,7 @@ import unittest
    
 from enum import Enum, auto
 import StateMachine as SM
-from PySide2 import QtCore, QtGui, QtWidgets
+from PySide import QtCore, QtGui, QtWidgets
 
 class States(SM.States):
         

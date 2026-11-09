@@ -19,7 +19,7 @@
 
 import inspect, asyncio
 from enum import Enum, auto
-from PySide2 import QtCore
+from PySide import QtCore
 
 
 

@@ -61,14 +61,14 @@ if qtapi_env:
 
 # If a Qt lib is already imported, use that
 if not QtModule:
-    for QtModuleName in ("PyQt5", "PyQt6", "PySide2", "PySide6"):
+    for QtModuleName in ("PySide6", "PySide2", "PyQt6", "PyQt5"):
         if QtModuleName in sys.modules:
             QtModule = sys.modules[QtModuleName]
             break
 
 # Try importing qt libs
 if not QtModule:
-    for QtModuleName in ("PyQt5", "PyQt6", "PySide2", "PySide6"):
+    for QtModuleName in ("PySide6", "PySide2", "PyQt6", "PyQt5"):
         try:
             QtModule = importlib.import_module(QtModuleName)
         except ImportError:

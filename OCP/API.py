@@ -23,7 +23,7 @@ import asyncio, logging, uuid
 from asyncio.queues import Queue
 from autobahn.asyncio.component import Component
 from autobahn import wamp
-from PySide2 import QtCore
+from PySide import QtCore
 from Qasync import asyncSlot
 import Utils
 import FreeCAD

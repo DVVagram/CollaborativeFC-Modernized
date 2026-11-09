@@ -18,7 +18,7 @@
 # ************************************************************************
 
 import FreeCADGui, Utils
-from PySide2 import QtWidgets, QtCore, QtGui
+from PySide import QtWidgets, QtCore, QtGui
 import Utils.StateMachine as SM
 
 class BusyIndicator(QtWidgets.QWidget):

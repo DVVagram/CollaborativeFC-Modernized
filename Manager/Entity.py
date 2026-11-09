@@ -19,7 +19,7 @@
 
 import asyncio, uuid, os, traceback
 import FreeCAD
-from PySide2 import QtCore
+from PySide import QtCore
 import Utils.StateMachine as SM
 from Utils import Errorhandling
 from Manager.NodeDocument import NodeDocumentManager

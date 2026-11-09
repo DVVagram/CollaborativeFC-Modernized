@@ -18,7 +18,7 @@
 # ************************************************************************
 
 import FreeCADGui, asyncio, os
-from PySide2 import QtCore, QtGui, QtWidgets
+from PySide import QtCore, QtGui, QtWidgets
 
 from Interface.AsyncSlotWidget import AsyncSlotWidget
 from Interface.PeerView import PeerView
