@@ -76,8 +76,12 @@ Observed and confirmed:
 * Opening a FreeCAD document creates a local collaboration entity
   (`status == "Local"`), and document changes (adding a `Part::Box`,
   recompute) still flow through the original observer pipeline.
-* The StateMachine unit tests in `Utils/StateMachineTest.py` import and run
-  against PySide6.
+* `Utils/StateMachineTest.py` was executed against PySide6 and fails at import
+  with `module 'StateMachine' has no attribute 'Transitions'`. This is
+  pre-existing: `Utils/StateMachine.py` has never defined `Transitions`, in the
+  untouched baseline as well, so the bundled test is stale. Apart from the Qt
+  import line it is unchanged here. The add-on ships no other tests, so there is
+  no automated test suite to run.
 
 ## Remaining incompatibilities / not verified
 
