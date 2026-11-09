@@ -182,9 +182,8 @@ class Node(QtCore.QObject, Utils.AsyncSlotObject):
         
         QtCore.QObject.__init__(self)
         
-        # for development it's easier to use the local node!
+        # path to the OCP command line tool shipped with the ocp package
         self.__ocp = ocp.node_path
-        self.__ocp = "/home/stefan/Projects/OCP/OCP"
                
         #for testing we need to connect to a dedicated node       
         self.__test = False

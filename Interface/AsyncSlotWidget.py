@@ -102,8 +102,9 @@ class AsyncSlotWidget():
     # A base class to inherit from when AsyncSlotObjects are used and its
     # status shall be conveyed to the user
         
-    def __init__(self, parent):
-        
+    def __init__(self, parent=None):
+        # parent is optional so that PySide6's QObject.__init__ can chain into this
+        # mixin constructor when the widget classes are initialised
         self.__asyncObject = None
         self.__running = []
         self.__parent = parent
@@ -163,8 +164,9 @@ class AsyncSlotPromoter(QtCore.QObject, AsyncSlotWidget):
         
 class StateMachineProcessWidget():
     
-    def __init__(self, parent: QtCore.QObject):
-        
+    def __init__(self, parent: QtCore.QObject = None):
+        # parent is optional so that PySide6's QObject.__init__ can chain into this
+        # mixin constructor when the widget classes are initialised
         self.__sm = None
         self.__parent = parent
         self.__progress = None

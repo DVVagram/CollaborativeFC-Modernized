@@ -231,13 +231,13 @@ class Manager(QtCore.QObject, OCPErrorHandler):
        
         if add:
             # same as created: setup the entity and let it figure out everything itself
-            return self._onOCPDocumentCreated(id)
+            return self._onOCPDocumentCreated(doc)
             
         else:
             if not self.hasEntity('id', doc):
                 return
             
-            entity = self.getEntity('id', id)
+            entity = self.getEntity('id', doc)
             entity.processEvent(Entity.Events.closed)
 
     

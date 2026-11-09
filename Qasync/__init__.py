@@ -8,21 +8,13 @@ Copyright (c) 2014 Arve Knudsen <arve.knudsen@gmail.com>
 BSD License
 """
 
-__author__ = (
-    "Sam McCormack",
-    "Gerard Marull-Paretas <gerard@teslabs.com>, "
-    "Mark Harviston <mark.harviston@gmail.com>, "
-    "Arve Knudsen <arve.knudsen@gmail.com>",
-)
-__version__ = "0.22.0"
-__url__ = "https://github.com/CabbageDevelopment/qasync"
-__license__ = "BSD"
-__all__ = ["QEventLoop", "QThreadExecutor", "asyncSlot", "asyncClose"]
+__all__ = ["QEventLoop", "QThreadExecutor", "asyncSlot", "asyncClose", "asyncWrap"]
 
 import asyncio
 import contextlib
 import functools
 import importlib
+import inspect
 import itertools
 import logging
 import os
@@ -41,11 +33,10 @@ if qtapi_env:
     env_to_mod_map = {
         "pyqt5": "PyQt5",
         "pyqt6": "PyQt6",
-        "pyqt": "PyQt4",
-        "pyqt4": "PyQt4",
+        "pyqt": "PyQt6",
         "pyside6": "PySide6",
         "pyside2": "PySide2",
-        "pyside": "PySide",
+        "pyside": "PySide6",
     }
     if qtapi_env in env_to_mod_map:
         QtModuleName = env_to_mod_map[qtapi_env]
@@ -79,8 +70,6 @@ if not QtModule:
 if not QtModule:
     raise ImportError("No Qt implementations found")
 
-logger.info("Using Qt Implementation: {}".format(QtModuleName))
-
 QtCore = importlib.import_module(QtModuleName + ".QtCore", package=QtModuleName)
 QtGui = importlib.import_module(QtModuleName + ".QtGui", package=QtModuleName)
 
@@ -89,24 +78,28 @@ if QtModuleName == "PyQt5":
     from PyQt5.QtCore import pyqtSlot as Slot
 
     QApplication = QtWidgets.QApplication
+    AllEvents = QtCore.QEventLoop.ProcessEventsFlags(0x00)
 
 elif QtModuleName == "PyQt6":
     from PyQt6 import QtWidgets
     from PyQt6.QtCore import pyqtSlot as Slot
 
     QApplication = QtWidgets.QApplication
+    AllEvents = QtCore.QEventLoop.ProcessEventsFlag(0x00)
 
 elif QtModuleName == "PySide2":
     from PySide2 import QtWidgets
     from PySide2.QtCore import Slot
 
     QApplication = QtWidgets.QApplication
+    AllEvents = QtCore.QEventLoop.ProcessEventsFlags(0x00)
 
 elif QtModuleName == "PySide6":
     from PySide6 import QtWidgets
     from PySide6.QtCore import Slot
 
     QApplication = QtWidgets.QApplication
+    AllEvents = QtCore.QEventLoop.ProcessEventsFlags(0x00)
 
 from ._common import with_logger  # noqa
 
@@ -153,8 +146,14 @@ class _QThreadWorker(QtCore.QThread):
                 else:
                     self._logger.debug("Setting Future result: %s", r)
                     future.set_result(r)
+                finally:
+                    # Release potential reference
+                    r = None  # noqa
             else:
                 self._logger.debug("Future was canceled")
+
+            # Delete references
+            del command, future, callback, args, kwargs
 
         self._logger.debug("Thread #%s stopped", self.__num)
 
@@ -184,11 +183,11 @@ class QThreadExecutor:
         if stack_size is None:
             # Match cpython/Python/thread_pthread.h
             if sys.platform.startswith("darwin"):
-                stack_size = 16 * 2 ** 20
+                stack_size = 16 * 2**20
             elif sys.platform.startswith("freebsd"):
-                stack_size = 4 * 2 ** 20
+                stack_size = 4 * 2**20
             elif sys.platform.startswith("aix"):
-                stack_size = 2 * 2 ** 20
+                stack_size = 2 * 2**20
         self.__workers = [
             _QThreadWorker(self.__queue, i + 1, stack_size) for i in range(max_workers)
         ]
@@ -237,6 +236,13 @@ class QThreadExecutor:
         self.shutdown()
 
 
+def _format_handle(handle: asyncio.Handle):
+    cb = getattr(handle, "_callback", None)
+    if isinstance(getattr(cb, "__self__", None), asyncio.tasks.Task):
+        return repr(cb.__self__)
+    return str(handle)
+
+
 def _make_signaller(qtimpl_qtcore, *args):
     class Signaller(qtimpl_qtcore.QObject):
         try:
@@ -256,7 +262,7 @@ class _SimpleTimer(QtCore.QObject):
         self.__debug_enabled = False
 
     def add_callback(self, handle, delay=0):
-        timerid = self.startTimer(int(delay * 1000))
+        timerid = self.startTimer(int(max(0, delay) * 1000))
         self.__log_debug("Registering timer id %s", timerid)
         assert timerid not in self.__callbacks
         self.__callbacks[timerid] = handle
@@ -279,8 +285,26 @@ class _SimpleTimer(QtCore.QObject):
                 if handle._cancelled:
                     self.__log_debug("Handle %s cancelled", handle)
                 else:
-                    self.__log_debug("Calling handle %s", handle)
-                    handle._run()
+                    if self.__debug_enabled:
+                        # This may not be the most efficient thing to do, but it removes the need to sync
+                        # "slow_callback_duration" and "_current_handle" variables
+                        loop = asyncio.get_event_loop()
+                        try:
+                            loop._current_handle = handle
+                            self._logger.debug("Calling handle %s", handle)
+                            t0 = time.time()
+                            handle._run()
+                            dt = time.time() - t0
+                            if dt >= loop.slow_callback_duration:
+                                self._logger.warning(
+                                    "Executing %s took %.3f seconds",
+                                    _format_handle(handle),
+                                    dt,
+                                )
+                        finally:
+                            loop._current_handle = None
+                    else:
+                        handle._run()
             finally:
                 del self.__callbacks[timerid]
                 handle = None
@@ -321,17 +345,16 @@ class _QEventLoop:
     ...     assert x + y == 4
     ...     await asyncio.sleep(.1)
     >>>
-    >>> loop = QEventLoop(app)
-    >>> asyncio.set_event_loop(loop)
-    >>> with loop:
-    ...     loop.run_until_complete(xplusy(2, 2))
+    >>> asyncio.run(xplusy(2, 2), loop_factory=lambda:QEventLoop(app))
 
     If the event loop shall be used with an existing and already running QApplication
     it must be specified in the constructor via already_running=True
     In this case the user is responsible for loop cleanup with stop() and close()
+
+    The set_running_loop parameter is there for backwards compatibility and does nothing.
     """
 
-    def __init__(self, app=None, set_running_loop=True, already_running=False):
+    def __init__(self, app=None, set_running_loop=False, already_running=False):
         self.__app = app or QApplication.instance()
         assert self.__app is not None, "No QApplication has been instantiated"
         self.__is_running = False
@@ -344,13 +367,12 @@ class _QEventLoop:
 
         self.__call_soon_signaller = signaller = _make_signaller(QtCore, object, tuple)
         self.__call_soon_signal = signaller.signal
-        signaller.signal.connect(lambda callback, args: self.call_soon(callback, *args))
+        self.__call_soon_signal.connect(
+            lambda callback, args: self.call_soon(callback, *args)
+        )
 
         assert self.__app is not None
         super().__init__()
-
-        if set_running_loop:
-            asyncio.events._set_running_loop(self)
 
         # We have to set __is_running to True after calling
         # super().__init__() because of a bug in BaseEventLoop.
@@ -361,6 +383,9 @@ class _QEventLoop:
             # postprocessing for the eventloop is done
             self._before_run_forever()
             self.__app.aboutToQuit.connect(self._after_run_forever)
+
+            # for asyncio to recognize the already running loop
+            asyncio.events._set_running_loop(self)
 
     def run_forever(self):
         """Run eventloop forever."""
@@ -373,14 +398,16 @@ class _QEventLoop:
 
         try:
             self.__log_debug("Starting Qt event loop")
+            asyncio.events._set_running_loop(self)
             rslt = -1
-            try:
-                rslt = self.__app.exec_()
-            except AttributeError:
+            if hasattr(self.__app, "exec"):
                 rslt = self.__app.exec()
+            else:
+                rslt = self.__app.exec_()
             self.__log_debug("Qt event loop ended with result %s", rslt)
             return rslt
         finally:
+            asyncio.events._set_running_loop(None)
             self._after_run_forever()
             self.__is_running = False
 
@@ -401,7 +428,9 @@ class _QEventLoop:
             self.run_forever()
         finally:
             future.remove_done_callback(stop)
-        self.__app.processEvents()  # run loop one last time to process all the events
+        self.__app.eventDispatcher().processEvents(
+            AllEvents
+        )  # run loop one last time to process all the events
         if not future.done():
             raise RuntimeError("Event loop stopped before Future completed.")
 
@@ -438,6 +467,9 @@ class _QEventLoop:
         if self.__default_executor is not None:
             self.__default_executor.shutdown()
 
+        if self.__call_soon_signal:
+            self.__call_soon_signal.disconnect()
+
         super().close()
 
         self._timer.stop()
@@ -447,6 +479,7 @@ class _QEventLoop:
             self._read_notifiers.values(), self._write_notifiers.values()
         ):
             notifier.setEnabled(False)
+            notifier.activated["int"].disconnect()
 
         self._read_notifiers = None
         self._write_notifiers = None
@@ -524,6 +557,7 @@ class _QEventLoop:
             return False
         else:
             notifier.setEnabled(False)
+            notifier.activated["int"].disconnect()
             return True
 
     def _add_writer(self, fd, callback, *args):
@@ -564,6 +598,7 @@ class _QEventLoop:
             return False
         else:
             notifier.setEnabled(False)
+            notifier.activated["int"].disconnect()
             return True
 
     def __notifier_cb_wrapper(self, notifiers, notifier, fd, callback, args):
@@ -579,8 +614,6 @@ class _QEventLoop:
             # callback. We must not re-enable it in that case.
             if notifiers.get(fd, None) is notifier:
                 notifier.setEnabled(True)
-            else:
-                notifier.activated["int"].disconnect()
 
     def __on_notifier_ready(self, notifiers, notifier, fd, callback, args):
         if fd not in notifiers:
@@ -591,6 +624,7 @@ class _QEventLoop:
                 callback,
             )
             notifier.setEnabled(False)
+            notifier.activated["int"].disconnect()
             return
 
         # It can be necessary to disable QSocketNotifier when e.g. checking
@@ -772,7 +806,7 @@ def asyncClose(fn):
     return wrapper
 
 
-def asyncSlot(*args):
+def asyncSlot(*args, **kwargs):
     """Make a Qt async slot run on asyncio loop."""
 
     def _error_handler(task):
@@ -780,13 +814,34 @@ def asyncSlot(*args):
             task.result()
         except Exception:
             sys.excepthook(*sys.exc_info())
+        except asyncio.CancelledError:
+            pass
 
     def outer_decorator(fn):
-        @Slot(*args)
+        @Slot(*args, **kwargs)
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
-            task = asyncio.ensure_future(fn(*args, **kwargs))
-            task.add_done_callback(_error_handler)
+            # Qt ignores trailing args from a signal but python does
+            # not so inspect the slot signature and if it's not
+            # callable try removing args until it is.
+            task = None
+            while len(args):
+                try:
+                    inspect.signature(fn).bind(*args, **kwargs)
+                except TypeError:
+                    if len(args):
+                        # Only convert args to a list if we need to pop()
+                        args = list(args)
+                        args.pop()
+                        continue
+                else:
+                    task = asyncio.ensure_future(fn(*args, **kwargs))
+                    task.add_done_callback(_error_handler)
+                    break
+            if task is None:
+                raise TypeError(
+                    "asyncSlot was not callable from Signal. Potential signature mismatch."
+                )
             return task
 
         return wrapper
@@ -794,28 +849,71 @@ def asyncSlot(*args):
     return outer_decorator
 
 
-class QEventLoopPolicyMixin:
-    def new_event_loop(self):
-        return QEventLoop(QApplication(sys.argv))
+async def asyncWrap(fn, *args, **kwargs):
+    """
+    Wrap a blocking function as an asynchronous and run it on the native Qt event loop.
+    The function will be scheduled using a one shot QTimer which prevents blocking the
+    QEventLoop. An example usage of this is raising a modal dialogue inside an asyncSlot.
+    ```python
+    async def before_shutdown(self):
+        await asyncio.sleep(2)
+
+    @asyncSlot()
+    async def shutdown_clicked(self):
+        # do some work async
+        asyncio.create_task(self.before_shutdown())
+
+        # run on the native Qt loop, not blocking the QEventLoop
+        result = await asyncWrap(
+            lambda: QMessageBox.information(None, "Done", "It is now safe to shutdown.")
+        )
+        if result == QMessageBox.StandardButton.Ok:
+            app.exit(0)
+    ```
+    """
+    future = asyncio.Future()
+
+    @functools.wraps(fn)
+    def helper():
+        try:
+            result = fn(*args, **kwargs)
+        except Exception as e:
+            future.set_exception(e)
+        else:
+            future.set_result(result)
+
+    # Schedule the helper to run in the next event loop iteration
+    QtCore.QTimer.singleShot(0, helper)
+    return await future
 
 
-class DefaultQEventLoopPolicy(
-    QEventLoopPolicyMixin,
-    asyncio.DefaultEventLoopPolicy,
-):
-    pass
+def _get_qevent_loop():
+    return QEventLoop(QApplication.instance() or QApplication(sys.argv))
 
 
-@contextlib.contextmanager
-def _set_event_loop_policy(policy):
-    old_policy = asyncio.get_event_loop_policy()
-    asyncio.set_event_loop_policy(policy)
-    try:
-        yield
-    finally:
-        asyncio.set_event_loop_policy(old_policy)
+if sys.version_info >= (3, 12):
 
+    def run(*args, **kwargs):
+        return asyncio.run(
+            *args,
+            **kwargs,
+            loop_factory=_get_qevent_loop,
+        )
+else:
+    # backwards compatibility with event loop policies
+    class DefaultQEventLoopPolicy(asyncio.DefaultEventLoopPolicy):
+        def new_event_loop(self):
+            return _get_qevent_loop()
 
-def run(*args, **kwargs):
-    with _set_event_loop_policy(DefaultQEventLoopPolicy()):
-        return asyncio.run(*args, **kwargs)
+    @contextlib.contextmanager
+    def _set_event_loop_policy(policy):
+        old_policy = asyncio.get_event_loop_policy()
+        asyncio.set_event_loop_policy(policy)
+        try:
+            yield
+        finally:
+            asyncio.set_event_loop_policy(old_policy)
+
+    def run(*args, **kwargs):
+        with _set_event_loop_policy(DefaultQEventLoopPolicy()):
+            return asyncio.run(*args, **kwargs)

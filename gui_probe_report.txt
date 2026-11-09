@@ -1,0 +1,12 @@
+FreeCAD ['1', '1', '4'] GuiUp 1
+PySideUic: True
+Collaborate command: True
+addon modules loaded: ['Collaboration', 'Interface', 'Manager', 'Documents.Observer', 'Qasync', 'PySide']
+import Collaboration: OK
+connection: OCPConnection
+manager: Manager
+importfail: []
+collab toolbar groups: [(1, 'Collaboration Network', True, 'Command')]
+uiWidget: UIWidget children: 147
+panel visible: True size: 408 500
+panel grab: 510 625 saved: True
