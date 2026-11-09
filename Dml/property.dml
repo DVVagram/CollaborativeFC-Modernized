@@ -1,0 +1,220 @@
+Map {
+    .name: "PropertyContainer"
+    
+    //event handling
+    event onDynamicPropertyCreated      //name, typeID, group, documentation, status
+    event onDynamicPropertiesCreated    //[name], [info]
+    event onDynamicPropertyRemoved      //name
+    event onDatasChanged                //[name], [datas]
+    
+    .key: string    
+    .value: Data {
+        
+        .name: "Property"
+
+        //FreeCAD infos
+        property string typeid
+        property string group
+        property string documentation
+        property var    status
+        property var    data
+        
+        //event handling
+        event onStatusChanged   //status
+        event onDataChanged
+        
+        .onPropertyChanged: function(prop) {
+            
+            switch(prop) {
+                case "status":                
+                    this.onStatusChanged.Emit(this.status);
+                    break;
+            
+                case "data":              
+                    this.onDataChanged.Emit(this.data);
+                    break;
+            }
+        }
+        
+        function Init(typeID, group, documentation, status) {          
+                 
+            //prevent status property change emitting
+            this.onPropertyChanged.Disable()
+            try {
+                this.status = status
+                this.typeid = typeID
+                this.group = group
+                this.documentation = documentation
+            }
+            finally {
+                this.onPropertyChanged.Enable()
+            }
+        }
+        
+        function SetValue(value) {
+            this.data = value
+        }
+        
+        const function GetValue() {
+            return this.data
+        }
+        
+        const function GetInfo() {
+            var dict = {
+                "id": this.typeid,
+                "group": this.group,
+                "docu": this.documentation,
+                "status": this.status
+            }
+            return dict
+        }
+        
+        //FC 0.18 compatibility function. As it does not support full 0.19 status we need to handle the two 
+        //dynamic editor modes separately, without removing all 0.19 stati it does not know about.
+        function SetEditorMode(mode) {
+        
+            status = this.status.slice()
+            
+            //remove occurrences of "ReadOnly" and "Hidden" to allow simple addition of modes afterwards
+            idx = status.indexOf('Hidden')
+            if (idx > -1) {
+                delete status[idx]
+            }
+            idx = status.indexOf('ReadOnly')
+            if (idx > -1) {
+                delete status[idx]
+            }
+            
+            for (var i=0; i<mode.length; i++) {
+                status.push(mode[i])
+            }
+            
+            //set the newly created status
+            this.status = status
+        }
+    }
+    
+    //creates a new property and sets it up correctly. No new property event emitted
+    function SetupProperty(name, typeID, group, documentation, status) {
+              
+        if (this.Has(name)) {
+            throw "Property " + name + " already exists"
+        }
+        
+        var prop = this.New(name)       
+        prop.Init(typeID, group, documentation, status)    
+               
+        return prop
+    }
+    
+    function SetupProperties(names, infos) {
+    
+        for (var i=0; i<names.length; i++) {
+            //setup
+            var info = infos[i]
+            this.SetupProperty(names[i], info["typeid"], info["group"], info["docu"], info["status"])
+        }
+    }
+    
+    function CreateDynamicProperty(name, typeID, group, documentation, status) {
+        
+        if (this.Has(name)) {
+            throw "Property already exists"
+        }
+               
+        //setup and inform!
+        var prop = this.SetupProperty(name, typeID, group, documentation, status)
+        this.onDynamicPropertyCreated.Emit(name, typeID, group, documentation, status)
+        return prop
+    }
+    
+    function CreateDynamicProperties(names, infos) {
+        
+        //setup and inform
+        this.SetupProperties(names, infos)
+        this.onDynamicPropertiesCreated.Emit(names, infos)
+    }
+    
+    function RemoveDynamicProperty(name) {
+        
+        this.Remove(name)
+        this.onDynamicPropertyRemoved.Emit(name)
+    }
+    
+    function SetValues(props, values) {
+
+        //we iterate from the back to allow us to remove entries from props and values,
+        //if they do not exist. This adds robustness: even if one property fails, the others are
+        //written
+
+        var failed = new Array()
+        var writtenProps  = props.slice()
+        var writtenVals = values.slice()
+        for (var i=props.length - 1; i>=0; i--) {
+               
+            var name = props[i]
+            if (!this.Has(name)) {
+                writtenProps.splice(i, 1);
+                writtenVals.splice(i, 1);
+                failed.push(name)
+                continue
+            }
+                
+            prop = this.Get(name)
+            prop.onDataChanged.Disable()
+            try {
+                prop.SetValue(values[i])
+            }
+            catch(e) {
+                writtenProps.splice(i, 1);
+                writtenVals.splice(i, 1);
+                failed.push(name)
+            }
+            finally {
+                prop.onDataChanged.Enable()
+            }
+        }
+        this.onDatasChanged.Emit(writtenProps, writtenVals)
+        
+        return failed
+    }
+    
+    function SetStatus(props, values) {
+    
+        var failed = new Array()
+        for (var i=0; i<props.length; i++) {
+               
+            var name = props[i]
+            if (!this.Has(name)) {
+                failed.push(name)
+                continue
+            }
+            
+            try {
+                var obj = this.Get(name)
+                obj.status = values[i]
+            }
+            catch(e) {
+                failed.push(name)
+            }
+        }
+        
+        return failed
+    }
+    
+    function SetEditorModes(props, values) {
+    
+        var failed = new Array()
+        for (var i=0; i<props.length; i++) {
+            
+            var prop = props[i]
+            if (!this.Has(prop)) {
+                failed.push(prop)
+            }
+            
+            var obj = this.Get(prop)
+            obj.SetEditorMode(values[i])
+        }
+        return failed
+    }
+}

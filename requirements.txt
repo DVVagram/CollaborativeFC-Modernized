@@ -1,0 +1,4 @@
+ocp
+msgpack
+autobahn[serialization]
+aiofiles

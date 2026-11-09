@@ -1,0 +1,60 @@
+import "objectmap.dml" as ObjectContainer
+import "object.dml" as Object
+import "property.dml" as PropertyContainer
+
+Data {
+    .name: "Document"
+    
+    /* Document Properties */
+    PropertyContainer {
+        .name: "Properties"
+    }
+    
+    /* Document Objects */
+    ObjectContainer {
+        .name: "Objects"
+        
+        .value: Object{
+            .name: "DocumentObject"
+            
+            property var dependencies
+            
+            Transaction {
+                .name: "Transaction"
+                .recursive: true
+                .automatic: true
+
+                .onParticipation: function() {
+                    
+                    var deps = this.parent.dependencies
+                    if (deps) {
+                        for (var i = 0; i < deps.length; i++) {
+                            if (Document.Objects.Has(deps[i])) {
+                                Document.Objects.Get(deps[i]).Transaction.Add()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        PartialTransaction {
+            .name: "Transaction"            
+            .recursive: false
+            .automatic: true
+        }
+    }
+    
+    /* View Providers */
+    ObjectContainer {
+        .name: "ViewProviders"
+        
+        .value: Object{
+            .name: "ViewProvider"
+        }
+    }
+    
+    
+    //mainly required for testing purposes
+    event sync
+}

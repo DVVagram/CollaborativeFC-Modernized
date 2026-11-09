@@ -1,0 +1,41 @@
+
+Map {
+    .name: "ObjectContainer"
+    
+    event onObjectCreated               //name + typeid
+    event onObjectRemoved               //name
+    
+    function NewObject(name, typeid) {
+    
+        if (this.Has(name)) {
+            throw "Name already taken"
+        }
+
+        //set up 
+        var obj = this.New(name)
+        obj.fcName = name
+        obj.typeid = typeid
+        
+        this.onObjectCreated.Emit(name, typeid)
+        return obj
+    }
+    
+    function RemoveObject(name) {
+        
+        this.Remove(name)
+        this.onObjectRemoved.Emit(name)
+    }   
+    
+    const function GetObjectTypes() {
+        
+        var result = {}
+        var keys = this.Keys()
+        for (var i=0; i<keys.length; i++) {
+            result[keys[i]] = this.Get(keys[i]).typeid
+        }
+        return result
+    }
+    
+    .key: string
+    .value: none
+}
